@@ -483,6 +483,9 @@
             console.log(`📤 [SEND] Message: "${messageText.substring(0, 30)}${messageText.length > 30 ? '...' : ''}"`);
             console.log(`📤 [SEND] Client timestamp: ${clientSendTime.toFixed(2)}ms`);
             
+            // Display message immediately (optimistic UI)
+            displayMessage(username, messageText, new Date().toISOString(), true);
+            
             socket.send(messageText);
             input.value = "";
             
@@ -519,7 +522,7 @@
             messageSendTimes.delete(messageKey);
             messageSendTimes.delete(data.content);
             
-            // Don't display own message again in chat (server already has it)
+            // Don't display own message again (already shown optimistically)
             return;
         }
         
