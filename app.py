@@ -9,6 +9,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from flask_caching import Cache
 from sqlalchemy import text
+import time
 
 class FilteredLogger(logging.Filter):
     def filter(self, record):
@@ -347,28 +348,36 @@ def handle_connect():
         app.logger.error(f'Connect error: {e}')
 
 @socketio.on("message")
-def handle_message(msg):
+def handle_message(data):
     username = clients.get(request.sid)
     if not username:
         return
     
     try:
-        if msg == "/quit":
-            emit('system', f'{username} left the chat', broadcast=True)
-            return
-        
+        msg = data.get("message")
+        msg_id = data.get("id")
+        client_sent = data.get("client_sent", None)
+
+        server_received = time.time() * 1000  # ms
+
         user = User.query.filter_by(username=username).first()
         if user:
             new_message = Message(content=msg, user_id=user.id)
             db.session.add(new_message)
             db.session.commit()
             
-            # Invalidate cache when new message is added
             invalidate_message_cache()
-            
-            emit('chat', new_message.to_dict(), broadcast=True)
-            app.logger.debug(f'Message from {username}')
-            
+
+            emit("chat", {
+                "id": msg_id,
+                "username": username,
+                "message": msg,
+                "timestamp": new_message.timestamp.isoformat(),
+                "client_sent": client_sent,
+                "server_received": server_received,
+                "server_broadcast": time.time() * 1000
+            }, broadcast=True)
+
     except Exception as e:
         db.session.rollback()
         app.logger.error(f'Message error: {e}')
@@ -417,3 +426,4 @@ if __name__ == "__main__":
         allow_unsafe_werkzeug=True
 
     )
+
