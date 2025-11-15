@@ -492,7 +492,7 @@ def handle_message(msg):
             
             # Prepare message with timestamp
             message_data = new_message.to_dict()
-            message_data['server_timestamp'] = time.time()  # Add server timestamp
+            message_data['server_timestamp'] = time.time()
             
             # Broadcast message
             broadcast_start = time.time()
@@ -502,9 +502,24 @@ def handle_message(msg):
             # Calculate total time
             total_time = (time.time() - start_time) * 1000
             
+            # Store latency data (keep last 200 entries)
+            latency_data['db_times'].append(db_time)
+            latency_data['cache_times'].append(cache_time)
+            latency_data['broadcast_times'].append(broadcast_time)
+            latency_data['total_times'].append(total_time)
+            latency_data['messages'].append(msg[:50])
+            
+            # Keep only last 200 entries
+            if len(latency_data['total_times']) > 200:
+                latency_data['db_times'].pop(0)
+                latency_data['cache_times'].pop(0)
+                latency_data['broadcast_times'].pop(0)
+                latency_data['total_times'].pop(0)
+                latency_data['messages'].pop(0)
+            
             # Log performance metrics
             app.logger.info(
-                f'⏱️  Message latency - '
+                f'⏱️  Message #{len(latency_data["total_times"])} - '
                 f'User: {username}, '
                 f'DB: {db_time:.2f}ms, '
                 f'Cache: {cache_time:.2f}ms, '
@@ -568,4 +583,5 @@ if __name__ == "__main__":
         debug=False,
         allow_unsafe_werkzeug=True
     )
+
 
