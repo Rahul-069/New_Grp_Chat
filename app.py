@@ -574,6 +574,86 @@ def cleanup():
 import atexit
 atexit.register(cleanup)
 
+import time
+from threading import Thread
+
+# Store latency data
+latency_data = {
+    'messages': [],
+    'db_times': [],
+    'cache_times': [],
+    'broadcast_times': [],
+    'total_times': []
+}
+
+@app.route("/test-latency")
+def test_latency():
+    """Latency testing dashboard"""
+    if "username" not in session:
+        return redirect(url_for("login"))
+    return render_template("latency_test.html", username=session["username"])
+
+@app.route("/api/latency-stats", methods=["GET"])
+def get_latency_stats():
+    """Get current latency statistics"""
+    if "username" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    if not latency_data['total_times']:
+        return jsonify({
+            "status": "no_data",
+            "message": "No latency data collected yet"
+        })
+    
+    db_times = latency_data['db_times']
+    cache_times = latency_data['cache_times']
+    broadcast_times = latency_data['broadcast_times']
+    total_times = latency_data['total_times']
+    
+    return jsonify({
+        "status": "success",
+        "message_count": len(total_times),
+        "db": {
+            "average": sum(db_times) / len(db_times),
+            "min": min(db_times),
+            "max": max(db_times),
+            "recent_10": db_times[-10:]
+        },
+        "cache": {
+            "average": sum(cache_times) / len(cache_times),
+            "min": min(cache_times),
+            "max": max(cache_times),
+            "recent_10": cache_times[-10:]
+        },
+        "broadcast": {
+            "average": sum(broadcast_times) / len(broadcast_times),
+            "min": min(broadcast_times),
+            "max": max(broadcast_times),
+            "recent_10": broadcast_times[-10:]
+        },
+        "total": {
+            "average": sum(total_times) / len(total_times),
+            "min": min(total_times),
+            "max": max(total_times),
+            "recent_10": total_times[-10:]
+        }
+    })
+
+@app.route("/api/reset-latency-stats", methods=["POST"])
+def reset_latency_stats():
+    """Reset latency statistics"""
+    if "username" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    latency_data['messages'].clear()
+    latency_data['db_times'].clear()
+    latency_data['cache_times'].clear()
+    latency_data['broadcast_times'].clear()
+    latency_data['total_times'].clear()
+    
+    app.logger.info("Latency statistics reset")
+    return jsonify({"status": "success", "message": "Statistics reset"})
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     socketio.run(
@@ -583,5 +663,6 @@ if __name__ == "__main__":
         debug=False,
         allow_unsafe_werkzeug=True
     )
+
 
 
