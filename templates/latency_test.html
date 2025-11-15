@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Latency Test - 150 Messages</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #aa00ff;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .primary-btn {
+            background: #aa00ff;
+            color: white;
+        }
+        .primary-btn:hover {
+            background: #8800cc;
+        }
+        .secondary-btn {
+            background: #28a745;
+            color: white;
+        }
+        .secondary-btn:hover {
+            background: #218838;
+        }
+        .danger-btn {
+            background: #dc3545;
+            color: white;
+        }
+        .danger-btn:hover {
+            background: #c82333;
+        }
+        .status {
+            background: #f0e6ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .status.running {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.complete {
+            background: #d4edda;
+            color: #155724;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #aa00ff, #ff00ff);
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #aa00ff;
+        }
+        .stat-card h3 {
+            margin: 0 0 15px 0;
+            color: #aa00ff;
+            font-size: 16px;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+        }
+        .mini-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        .log-area {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+        }
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .back-link a {
+            color: #aa00ff;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+        input[type="number"] {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚡ Latency Performance Test</h1>
+        <p class="subtitle">Automated testing for message delivery performance</p>
+        
+        <div class="controls">
+            <input type="number" id="messageCount" value="150" min="1" max="500">
+            <button class="primary-btn" onclick="startTest()">🚀 Start Test</button>
+            <button class="secondary-btn" onclick="stopTest()">⏸️ Stop Test</button>
+            <button class="danger-btn" onclick="resetStats()">🔄 Reset Stats</button>
+        </div>
+        
+        <div class="status" id="status">
+            Ready to test. Click "Start Test" to begin.
+        </div>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress" style="width: 0%">
+                0 / 150
+            </div>
+        </div>
+        
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <h3>📊 Average Total Latency</h3>
+                <div class="stat-value" id="avgTotal">--</div>
+                <div class="stat-label">milliseconds</div>
+                <div class="mini-stats">
+                    <span>Min: <strong id="minTotal">--</strong></span>
+                    <span>Max: <strong id="maxTotal">--</strong></span>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <h3>💾 Database Time</h3>
+                <div class="stat-value" id="avgDb">--</div>
+                <div class="stat-label">milliseconds</div>
+                <div class="mini-stats">
+                    <span>Min: <strong id="minDb">--</strong></span>
+                    <span>Max: <strong id="maxDb">--</strong></span>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <h3>🗄️ Cache Time</h3>
+                <div class="stat-value" id="avgCache">--</div>
+                <div class="stat-label">milliseconds</div>
+                <div class="mini-stats">
+                    <span>Min: <strong id="minCache">--</strong></span>
+                    <span>Max: <strong id="maxCache">--</strong></span>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <h3>📡 Broadcast Time</h3>
+                <div class="stat-value" id="avgBroadcast">--</div>
+                <div class="stat-label">milliseconds</div>
+                <div class="mini-stats">
+                    <span>Min: <strong id="minBroadcast">--</strong></span>
+                    <span>Max: <strong id="maxBroadcast">--</strong></span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log-area" id="logArea">
+            <div class="log-entry">📝 Test log will appear here...</div>
+        </div>
+        
+        <div class="back-link">
+            <a href="{{ url_for('chat') }}">← Back to Chat</a>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+    <script>
+        const socket = io({ transports: ["websocket"] });
+        let testRunning = false;
+        let messagesSent = 0;
+        let targetMessages = 150;
+        let testInterval;
+        
+        function log(message) {
+            const logArea = document.getElementById('logArea');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+        
+        function updateProgress(current, total) {
+            const percentage = (current / total) * 100;
+            const progressBar = document.getElementById('progress');
+            progressBar.style.width = percentage + '%';
+            progressBar.textContent = `${current} / ${total}`;
+        }
+        
+        function updateStats() {
+            fetch('/api/latency-stats')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Update total stats
+                        document.getElementById('avgTotal').textContent = data.total.average.toFixed(2);
+                        document.getElementById('minTotal').textContent = data.total.min.toFixed(2);
+                        document.getElementById('maxTotal').textContent = data.total.max.toFixed(2);
+                        
+                        // Update DB stats
+                        document.getElementById('avgDb').textContent = data.db.average.toFixed(2);
+                        document.getElementById('minDb').textContent = data.db.min.toFixed(2);
+                        document.getElementById('maxDb').textContent = data.db.max.toFixed(2);
+                        
+                        // Update cache stats
+                        document.getElementById('avgCache').textContent = data.cache.average.toFixed(2);
+                        document.getElementById('minCache').textContent = data.cache.min.toFixed(2);
+                        document.getElementById('maxCache').textContent = data.cache.max.toFixed(2);
+                        
+                        // Update broadcast stats
+                        document.getElementById('avgBroadcast').textContent = data.broadcast.average.toFixed(2);
+                        document.getElementById('minBroadcast').textContent = data.broadcast.min.toFixed(2);
+                        document.getElementById('maxBroadcast').textContent = data.broadcast.max.toFixed(2);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching stats:', error);
+                });
+        }
+        
+        function startTest() {
+            if (testRunning) {
+                log('⚠️ Test already running!');
+                return;
+            }
+            
+            targetMessages = parseInt(document.getElementById('messageCount').value);
+            messagesSent = 0;
+            testRunning = true;
+            
+            document.getElementById('status').textContent = 'Test Running... Sending messages';
+            document.getElementById('status').className = 'status running';
+            
+            log(`🚀 Starting test with ${targetMessages} messages`);
+            log('📤 Sending messages...');
+            
+            testInterval = setInterval(() => {
+                if (messagesSent >= targetMessages) {
+                    stopTest();
+                    return;
+                }
+                
+                messagesSent++;
+                const message = `Test message #${messagesSent}`;
+                socket.send(message);
+                
+                updateProgress(messagesSent, targetMessages);
+                
+                if (messagesSent % 10 === 0) {
+                    log(`✅ Sent ${messagesSent}/${targetMessages} messages`);
+                    updateStats();
+                }
+            }, 100); // Send one message every 100ms
+        }
+        
+        function stopTest() {
+            if (!testRunning) return;
+            
+            clearInterval(testInterval);
+            testRunning = false;
+            
+            document.getElementById('status').textContent = `Test Complete! Sent ${messagesSent} messages`;
+            document.getElementById('status').className = 'status complete';
+            
+            log(`🎉 Test completed! Total messages: ${messagesSent}`);
+            log('📊 Fetching final statistics...');
+            
+            setTimeout(() => {
+                updateStats();
+                log('✅ Statistics updated!');
+            }, 1000);
+        }
+        
+        async function resetStats() {
+            if (testRunning) {
+                alert('Please stop the test first!');
+                return;
+            }
+            
+            if (!confirm('Reset all statistics?')) return;
+            
+            try {
+                const response = await fetch('/api/reset-latency-stats', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    log('🔄 Statistics reset');
+                    document.getElementById('status').textContent = 'Ready to test. Click "Start Test" to begin.';
+                    document.getElementById('status').className = 'status';
+                    updateProgress(0, targetMessages);
+                    
+                    // Reset all stat displays
+                    ['Total', 'Db', 'Cache', 'Broadcast'].forEach(stat => {
+                        document.getElementById('avg' + stat).textContent = '--';
+                        document.getElementById('min' + stat).textContent = '--';
+                        document.getElementById('max' + stat).textContent = '--';
+                    });
+                }
+            } catch (error) {
+                log('❌ Error resetting stats: ' + error.message);
+            }
+        }
+        
+        // Auto-update stats every 2 seconds during test
+        setInterval(() => {
+            if (testRunning) {
+                updateStats();
+            }
+        }, 2000);
+        
+        socket.on('connect', () => {
+            log('✅ Connected to server');
+        });
+        
+        socket.on('disconnect', () => {
+            log('❌ Disconnected from server');
+            if (testRunning) {
+                stopTest();
+            }
+        });
+    </script>
+</body>
+</html>
