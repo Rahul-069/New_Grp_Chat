@@ -6,9 +6,13 @@ from config import config
 import bcrypt
 import os
 import logging
-from logging.handlers import RotatingFileHandler
 from flask_caching import Cache
 from sqlalchemy import text
+import time
+import threading
+from queue import Queue
+from datetime import datetime
+import atexit
 
 class FilteredLogger(logging.Filter):
     def filter(self, record):
@@ -45,6 +49,101 @@ socketio = SocketIO(app, async_mode="threading")
 
 clients = {}
 
+# ==================== MESSAGE BATCHING SYSTEM ====================
+class MessageBatcher:
+    """Batches messages for efficient database writes"""
+    
+    def __init__(self, batch_size=10, flush_interval=0.5):
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
+        self.message_queue = Queue()
+        self.running = False
+        self.worker_thread = None
+        self.last_flush = time.time()
+        
+    def start(self):
+        """Start the batching worker thread"""
+        if not self.running:
+            self.running = True
+            self.worker_thread = threading.Thread(target=self._worker, daemon=True)
+            self.worker_thread.start()
+            app.logger.info("Message batcher started")
+    
+    def stop(self):
+        """Stop the batching worker thread"""
+        self.running = False
+        if self.worker_thread:
+            self.worker_thread.join(timeout=2)
+            app.logger.info("Message batcher stopped")
+    
+    def add_message(self, content, user_id, timestamp):
+        """Add a message to the batch queue"""
+        self.message_queue.put({
+            'content': content,
+            'user_id': user_id,
+            'timestamp': timestamp
+        })
+    
+    def _worker(self):
+        """Background worker that flushes batches to database"""
+        batch = []
+        
+        while self.running:
+            try:
+                time_since_flush = time.time() - self.last_flush
+                should_flush_time = time_since_flush >= self.flush_interval
+                
+                try:
+                    msg_data = self.message_queue.get(timeout=0.1)
+                    batch.append(msg_data)
+                except:
+                    msg_data = None
+                
+                should_flush = (
+                    len(batch) >= self.batch_size or
+                    (should_flush_time and len(batch) > 0)
+                )
+                
+                if should_flush:
+                    self._flush_batch(batch)
+                    batch = []
+                    self.last_flush = time.time()
+                    
+            except Exception as e:
+                app.logger.error(f'Batch worker error: {e}')
+                time.sleep(0.1)
+    
+    def _flush_batch(self, batch):
+        """Flush a batch of messages to database"""
+        if not batch:
+            return
+        
+        try:
+            with app.app_context():
+                messages = [
+                    Message(
+                        content=msg['content'],
+                        user_id=msg['user_id'],
+                        timestamp=msg['timestamp']
+                    )
+                    for msg in batch
+                ]
+                
+                db.session.bulk_save_objects(messages)
+                db.session.commit()
+                
+                app.logger.info(f'Batch flushed: {len(batch)} messages')
+                
+                invalidate_message_cache()
+                
+        except Exception as e:
+            app.logger.error(f'Batch flush error: {e}')
+            with app.app_context():
+                db.session.rollback()
+
+# Initialize message batcher
+message_batcher = MessageBatcher(batch_size=10, flush_interval=0.5)
+
 # ==================== DATABASE INITIALIZATION ====================
 def init_database():
     """Initialize database with error handling"""
@@ -54,6 +153,9 @@ def init_database():
             User.query.update({'is_logged_in': False})
             db.session.commit()
             app.logger.info("Database initialized successfully")
+            
+            message_batcher.start()
+            
     except Exception as e:
         app.logger.error(f"Database initialization failed: {e}")
         print(f"WARNING: Could not initialize database: {e}")
@@ -222,7 +324,7 @@ def chat():
                              username=session["username"],
                              recent_messages=[])
 
-@app.route("/logout", methods=["GET", "POST"])
+@app.route("/logout")
 def logout():
     username = session.get("username")
     user_id = session.get("user_id")
@@ -242,8 +344,7 @@ def logout():
         app.logger.error(f'Logout error: {e}')
         session.clear()
     
-    response = redirect(url_for("login"))
-    return response
+    return redirect(url_for("login"))
 
 @app.route("/health")
 def health():
@@ -253,7 +354,8 @@ def health():
         return jsonify({
             "status": "healthy",
             "database": "connected",
-            "active_users": len(clients)
+            "active_users": len(clients),
+            "queued_messages": message_batcher.message_queue.qsize()
         }), 200
     except Exception as e:
         app.logger.error(f'Health check failed: {e}')
@@ -279,7 +381,7 @@ def api_summarize():
         if summary is None:
             return jsonify({"error": "Failed to generate summary"}), 500
         
-        app.logger.info(f'Summary generated for: {session["username"]} (limit: {limit})')
+        app.logger.info(f'Summary generated for: {session["username"]}')
         return jsonify({"summary": summary, "message_count": message_count})
         
     except Exception as e:
@@ -352,25 +454,29 @@ def handle_message(msg):
     if not username:
         return
     
-    try:
-        if msg == "/quit":
-            emit('system', f'{username} left the chat', broadcast=True)
-            return
+    # try:
+    #     if msg == "/quit":
+    #         emit('system', f'{username} left the chat', broadcast=True)
+    #         return
         
         user = User.query.filter_by(username=username).first()
         if user:
-            new_message = Message(content=msg, user_id=user.id)
-            db.session.add(new_message)
-            db.session.commit()
+            timestamp = datetime.utcnow()
             
-            # Invalidate cache when new message is added
-            invalidate_message_cache()
+            # Add to batch queue (non-blocking)
+            message_batcher.add_message(msg, user.id, timestamp)
             
-            emit('chat', new_message.to_dict(), broadcast=True)
-            app.logger.debug(f'Message from {username}')
+            # Prepare message data for immediate broadcast
+            message_data = {
+                'content': msg,
+                'username': username,
+                'timestamp': timestamp.isoformat()
+            }
+            
+            # Broadcast immediately
+            emit('chat', message_data, broadcast=True)
             
     except Exception as e:
-        db.session.rollback()
         app.logger.error(f'Message error: {e}')
         emit('error', {'message': 'Failed to send message'})
 
@@ -407,6 +513,14 @@ def handle_disconnect():
             db.session.rollback()
             app.logger.error(f'Disconnect error: {e}')
 
+# ==================== CLEANUP ====================
+def cleanup():
+    """Cleanup on shutdown"""
+    app.logger.info("Shutting down application...")
+    message_batcher.stop()
+
+atexit.register(cleanup)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     socketio.run(
@@ -415,5 +529,4 @@ if __name__ == "__main__":
         port=port,
         debug=False,
         allow_unsafe_werkzeug=True
-
     )
