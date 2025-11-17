@@ -45,7 +45,7 @@ app.config.from_object(config[env])
 
 # Initialize extensions
 db.init_app(app)
-socketio = SocketIO(app, async_mode="threading")
+socketio = SocketIO(app, async_mode="eventlet")
 
 clients = {}
 
@@ -530,4 +530,5 @@ if __name__ == "__main__":
         debug=False,
         allow_unsafe_werkzeug=True
     )
+
 
